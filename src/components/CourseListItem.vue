@@ -220,7 +220,7 @@ export default {
                 type: 'http',
                 url: file.file,
                 filename: `${sanitize(attachment.title)}`,
-                destination: `${destination}/${sanitize(lecture.title)}`,
+                destination: `${destination}/Attachments/${sanitize(lecture.title)}`,
               };
             });
 
