@@ -4,7 +4,7 @@
 An easy-to-use client GUI for downloading Udemy courses along with their attachments.
 
 ## Usage
-**Latest version:** v1.0.0
+**Latest version:** v1.1.0
 1. Go to https://github.com/krunder/udemy-downloader/releases
 2. Download portable or setup on whichever version you prefer
 3. Load the application
