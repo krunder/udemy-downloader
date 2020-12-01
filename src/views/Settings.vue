@@ -28,6 +28,11 @@
       </div>
 
       <div class="form-group checkbox">
+        <input type="checkbox" id="overwrite" name="overwrite" v-model="formData.download.overwrite" />
+        <label for="overwrite">Overwrite (If exists)</label>
+      </div>
+
+      <div class="form-group checkbox">
         <input type="checkbox" id="subtitles" name="subtitles" v-model="formData.download.subtitles" />
         <label for="subtitles">Subtitles</label>
       </div>

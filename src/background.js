@@ -1,8 +1,8 @@
 'use strict'
 
-import { app, protocol, BrowserWindow, ipcMain, session } from 'electron'
-import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
-import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
+import { app, protocol, BrowserWindow, ipcMain, session } from 'electron';
+import { createProtocol } from 'vue-cli-plugin-electron-builder/lib';
+import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer';
 import HLS from './libraries/hls';
 import http from './libraries/http';
 import Settings from './plugins/settings';

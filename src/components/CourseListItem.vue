@@ -36,6 +36,7 @@ import { faDownload } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { ipcRenderer } from 'electron';
 import { mapState } from 'vuex';
+import { existsSync } from 'graceful-fs';
 import sanitize from 'sanitize-filename';
 import ProgressBar from '../components/ProgressBar';
 import DownloadProgress from '../components/DownloadProgress';
@@ -108,6 +109,12 @@ export default {
   },
 
   methods: {
+    async getLectureData(lecture) {
+      const { data } = await axios.get(`users/me/subscribed-courses/${this.course.id}/lectures/${lecture.id}?fields[asset]=stream_urls,download_urls,captions,title,filename,data,body&fields[lecture]=asset,supplementary_assets`);
+
+      return data;
+    },
+
     async prepareDownload() {
       this.prepare.inProgress = true;
 
@@ -118,10 +125,9 @@ export default {
       });
 
       const rows = curriculumResponse.results;
+      const chapters = [];
 
       this.prepare.total = rows.filter(row => row._class === CLASS_LECTURE).length;
-
-      const chapters = [];
 
       for (let i = 0; i < rows.length; i++) {
         if (rows[i]._class === CLASS_CHAPTER) {
@@ -144,8 +150,26 @@ export default {
       for (let i = 0; i < chapters.length; i++) {
         await this.queue.addAll(
           chapters[i].lectures.map((lecture) => async () => {
-            // Prepare lecture for download
-            await this.prepareLecture(lecture, chapters[i]);
+            const lectureData = await this.getLectureData(lecture);
+            const destination = this.generateDestination(chapters[i]);
+            const basename = sanitize(lecture.title);
+
+            // Prepare video
+            if (lectureData.asset.stream_urls) {
+              this.prepareVideo(lecture, lectureData, basename, destination);
+            }
+
+            // Prepare captions
+            if (this.$settings.get('download.subtitles')) {
+              if (lectureData.asset.captions && lectureData.asset.captions.length > 0) {
+                this.prepareCaptions(lecture, lectureData, basename, destination);
+              }
+            }
+
+            // Prepare attachments
+            if (this.$settings.get('download.attachments')) {
+              this.prepareAttachments(lecture, lectureData, basename, destination);
+            }
 
             // Increment prepared lecture count
             this.prepare.current++;
@@ -162,74 +186,78 @@ export default {
       this.prepare.downloads = [];
     },
 
-    async prepareLecture(lecture, chapter) {
-      const { data: lectureResponse } = await axios.get(`users/me/subscribed-courses/${this.course.id}/lectures/${lecture.id}?fields[asset]=stream_urls,download_urls,captions,title,filename,data,body&fields[lecture]=asset,supplementary_assets`);
+    prepareVideo(lecture, lectureData, basename, destination) {
+      const groupedVideos = lectureData.asset.stream_urls.Video.reduce((groups, video) => {
+        return { ...groups, [video.label]: video };
+      }, {});
 
-      const destination = `${this.$settings.get('download.outputDir')}/${sanitize(this.course.title)}/${sanitize(chapter.title)}`;
+      let download = {};
 
-      // Prepare video
-      if (lectureResponse.asset.stream_urls) {
-        const groupedVideos = lectureResponse.asset.stream_urls.Video.reduce((groups, video) => {
-          return { ...groups, [video.label]: video };
-        }, {});
+      if (groupedVideos.Auto && this.$settings.get('download.method') === DOWNLOAD_METHOD_HLS) {
+        download = {
+          quality: this.quality,
+          type: this.$settings.get('download.method'),
+          url: groupedVideos.Auto.file,
+          filename: `${basename}.ts`,
+          destination,
+        };
+      } else {
+        const video = this.getEligibleMp4Video(groupedVideos);
 
-        if (groupedVideos.Auto && this.$settings.get('download.method') === DOWNLOAD_METHOD_HLS) {
-          this.prepare.downloads.push({
-            quality: this.quality,
-            type: this.$settings.get('download.method'),
-            url: groupedVideos.Auto.file,
-            filename: `${sanitize(lecture.title)}.ts`,
-            destination,
-          });
-        } else {
-          const video = this.getEligibleMp4Video(groupedVideos);
-
-          this.prepare.downloads.push({
-            quality: video.label,
-            type: 'http',
-            url: video.file,
-            filename: `${sanitize(lecture.title)}.mp4`,
-            destination,
-          });
-        }
+        download = {
+          quality: video.label,
+          type: 'http',
+          url: video.file,
+          filename: `${basename}.mp4`,
+          destination,
+        };
       }
 
-      // Prepare captions
-      if (this.$settings.get('download.subtitles')) {
-        if (lectureResponse.asset.captions && lectureResponse.asset.captions.length > 0) {
-          const caption = lectureResponse.asset.captions[0];
+      if (this.$settings.get('download.overwrite') || !existsSync(`${download.destination}/${download.filename}`)) {
+        this.prepare.downloads.push(download);
+      }
+    },
 
-          this.prepare.downloads.push({
-            type: 'http',
-            url: caption.url,
-            filename: `${sanitize(lecture.title)}.srt`,
-            destination,
+    prepareCaptions(lecture, lectureData, basename, destination) {
+      const download = {
+        type: 'http',
+        url: lectureData.asset.captions[0].url,
+        filename: `${basename}.srt`,
+        destination,
+      };
+
+      if (this.$settings.get('download.overwrite') || !existsSync(`${download.destination}/${download.filename}`)) {
+        this.prepare.downloads.push(download);
+      }
+    },
+
+    prepareAttachments(lecture, lectureData, basename, destination) {
+      const validAttachments = (lectureData.supplementary_assets || [])
+          .filter(attachment => attachment.download_urls && attachment.download_urls.File && attachment.download_urls.File.length > 0);
+
+      if (validAttachments.length > 0) {
+        const downloads = validAttachments.reduce((accum, attachment) => {
+          const items = attachment.download_urls.File.map(file => {
+            return {
+              quality: null,
+              type: 'http',
+              url: file.file,
+              filename: `${sanitize(attachment.title)}`,
+              destination: `${destination}/Attachments/${basename}`,
+            };
+          }).filter(download => {
+            return this.$settings.get('download.overwrite') || !existsSync(`${download.destination}/${download.filename}`);
           });
-        }
+
+          return [...accum, ...items];
+        }, []);
+
+        this.prepare.downloads = [...this.prepare.downloads, ...downloads];
       }
+    },
 
-      // Prepare attachments
-      if (this.$settings.get('download.attachments')) {
-        const validAttachments = (lectureResponse.supplementary_assets || [])
-            .filter(attachment => attachment.download_urls && attachment.download_urls.File && attachment.download_urls.File.length > 0);
-
-        if (validAttachments.length > 0) {
-          const downloads = validAttachments.reduce((accum, attachment) => {
-            const items = attachment.download_urls.File.map(file => {
-              return {
-                type: 'http',
-                url: file.file,
-                filename: `${sanitize(attachment.title)}`,
-                destination: `${destination}/Attachments/${sanitize(lecture.title)}`,
-              };
-            });
-
-            return [...accum, ...items];
-          }, []);
-
-          this.prepare.downloads = [...this.prepare.downloads, ...downloads];
-        }
-      }
+    generateDestination(chapter) {
+      return `${this.$settings.get('download.outputDir')}/${sanitize(this.course.title)}/${sanitize(chapter.title)}`;
     },
 
     getEligibleMp4Video(videos) {

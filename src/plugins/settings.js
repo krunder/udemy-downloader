@@ -13,6 +13,7 @@ export default class Settings {
         outputDir: './',
         method: 'hls',
         quality: '1080',
+        overwrite: true,
         subtitles: true,
         attachments: true,
       }
