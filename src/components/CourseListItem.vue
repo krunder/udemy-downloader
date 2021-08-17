@@ -34,7 +34,7 @@
 <script>
 import { faDownload } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
-import { ipcRenderer } from 'electron';
+// import { ipcRenderer } from 'electron';
 import { mapState } from 'vuex';
 import { existsSync } from 'graceful-fs';
 import sanitize from 'sanitize-filename';
@@ -112,6 +112,8 @@ export default {
     async getLectureData(lecture) {
       const { data } = await axios.get(`users/me/subscribed-courses/${this.course.id}/lectures/${lecture.id}?fields[asset]=stream_urls,download_urls,captions,title,filename,data,body&fields[lecture]=asset,supplementary_assets`);
 
+      console.log(data);
+
       return data;
     },
 
@@ -126,6 +128,7 @@ export default {
 
       const rows = curriculumResponse.results;
       const chapters = [];
+
 
       this.prepare.total = rows.filter(row => row._class === CLASS_LECTURE).length;
 
@@ -177,7 +180,7 @@ export default {
         );
       }
 
-      ipcRenderer.invoke('downloads:add-course', this.course, this.prepare.downloads);
+      // ipcRenderer.invoke('downloads:add-course', this.course, this.prepare.downloads);
 
       // Reset preparation data
       this.prepare.inProgress = false;
